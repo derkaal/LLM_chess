@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LLM Chess Battle - MCP Demo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>LLM Chess Battle</h1>
+      <p class="subtitle">Pure LLM vs MCP-Enabled LLM</p>
+    </header>
+
+    <div class="main-content">
+      <div class="player-panel left">
+        <div class="player-card white-player">
+          <div class="player-icon">&#9812;</div>
+          <h2>Pure LLM</h2>
+          <span class="player-color">(White)</span>
+          <div class="player-badge no-mcp">No MCP</div>
+          <p class="player-desc">Raw LLM reasoning only.<br>No move validation.</p>
+          <div class="status-indicator" id="white-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Waiting</span>
+          </div>
+        </div>
+        <div class="illegal-moves-panel">
+          <h3>Illegal Move Attempts</h3>
+          <div class="illegal-count">
+            <span id="illegal-count">0</span>
+          </div>
+          <ul id="illegal-moves-list"></ul>
+        </div>
+      </div>
+
+      <div class="game-area">
+        <div class="board-container">
+          <div id="chessboard" class="chessboard"></div>
+        </div>
+        <div class="game-controls">
+          <button id="start-btn" class="start-button">
+            <span class="btn-icon">&#9654;</span>
+            Start New Game
+          </button>
+          <div id="game-status" class="game-status"></div>
+        </div>
+        <div class="current-turn" id="current-turn"></div>
+      </div>
+
+      <div class="player-panel right">
+        <div class="player-card black-player">
+          <div class="player-icon">&#9818;</div>
+          <h2>MCP Player</h2>
+          <span class="player-color">(Black)</span>
+          <div class="player-badge has-mcp">MCP Enabled</div>
+          <p class="player-desc">Chess engine assistance.<br>Perfect move validation.</p>
+          <div class="status-indicator" id="black-status">
+            <span class="status-dot"></span>
+            <span class="status-text">Waiting</span>
+          </div>
+        </div>
+        <div class="move-history-panel">
+          <h3>Move History</h3>
+          <div id="move-history" class="move-history"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="result-modal" class="modal hidden">
+      <div class="modal-content">
+        <h2 id="result-title">Game Over</h2>
+        <p id="result-message"></p>
+        <div class="result-stats">
+          <div class="stat">
+            <span class="stat-value" id="total-moves">0</span>
+            <span class="stat-label">Total Moves</span>
+          </div>
+          <div class="stat">
+            <span class="stat-value" id="total-illegal">0</span>
+            <span class="stat-label">Illegal Attempts</span>
+          </div>
+        </div>
+        <button id="close-modal" class="close-button">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
