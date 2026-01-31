@@ -61,10 +61,10 @@ async function initializeMCPClient() {
       capabilities: {}
     });
 
-    // Create transport with command configuration
+    // Create transport with local chess MCP server
     mcpTransport = new StdioClientTransport({
-      command: 'npx',
-      args: ['-y', '@anthropic-ai/mcp-server-chess']
+      command: 'node',
+      args: [join(__dirname, 'chess-mcp-server.js')]
     });
 
     await mcpClient.connect(mcpTransport);
