@@ -58,12 +58,12 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'get_best_move',
-        description: 'Get the best move for the current position (simple evaluation)',
+        description: 'Get the best move for the current position',
         inputSchema: {
           type: 'object',
           properties: {
             game_id: { type: 'string', description: 'Game identifier' },
-            depth: { type: 'number', description: 'Search depth (not used in simple eval)' }
+            depth: { type: 'number', description: 'Search depth' }
           },
           required: ['game_id']
         }
@@ -83,7 +83,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
-// Piece values for simple evaluation
+// Piece values
 const PIECE_VALUES = {
   p: 100,
   n: 320,
@@ -93,10 +93,85 @@ const PIECE_VALUES = {
   k: 20000
 };
 
-// Simple position evaluation
+// Piece-square tables (from White's perspective, flip for Black)
+// These encourage pieces to go to good squares
+const PST = {
+  p: [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [50, 50, 50, 50, 50, 50, 50, 50],
+    [10, 10, 20, 30, 30, 20, 10, 10],
+    [5,  5, 10, 25, 25, 10,  5,  5],
+    [0,  0,  0, 20, 20,  0,  0,  0],
+    [5, -5,-10,  0,  0,-10, -5,  5],
+    [5, 10, 10,-20,-20, 10, 10,  5],
+    [0,  0,  0,  0,  0,  0,  0,  0]
+  ],
+  n: [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+  ],
+  b: [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  5,  5,  5,  5,  5,  5,-10],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+  ],
+  r: [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [5, 10, 10, 10, 10, 10, 10,  5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [0,  0,  0,  5,  5,  0,  0,  0]
+  ],
+  q: [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [-5,  0,  5,  5,  5,  5,  0, -5],
+    [0,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20]
+  ],
+  k: [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [20, 20,  0,  0,  0,  0, 20, 20],
+    [20, 30, 10,  0,  0, 10, 30, 20]
+  ]
+};
+
+// Get piece-square value
+function getPST(piece, row, col) {
+  const table = PST[piece.type];
+  if (!table) return 0;
+
+  // Flip row for black pieces (they see the board from the other side)
+  const r = piece.color === 'w' ? row : 7 - row;
+  return table[r][col];
+}
+
+// Evaluate position with piece-square tables
 function evaluatePosition(chess) {
   if (chess.isCheckmate()) {
-    return chess.turn() === 'w' ? -Infinity : Infinity;
+    return chess.turn() === 'w' ? -99999 : 99999;
   }
   if (chess.isDraw()) {
     return 0;
@@ -109,25 +184,66 @@ function evaluatePosition(chess) {
     for (let col = 0; col < 8; col++) {
       const piece = board[row][col];
       if (piece) {
-        const value = PIECE_VALUES[piece.type];
-        score += piece.color === 'w' ? value : -value;
+        // Material value
+        const materialValue = PIECE_VALUES[piece.type];
+        // Positional value from piece-square tables
+        const positionalValue = getPST(piece, row, col);
+
+        const totalValue = materialValue + positionalValue;
+        score += piece.color === 'w' ? totalValue : -totalValue;
       }
     }
   }
 
+  // Bonus for having more mobility (more legal moves = better position)
+  const currentTurn = chess.turn();
+  const mobility = chess.moves().length;
+  score += currentTurn === 'w' ? mobility * 2 : -mobility * 2;
+
   return score;
 }
 
-// Get best move using simple minimax
-function getBestMove(chess, depth = 2) {
+// Order moves to improve alpha-beta pruning
+function orderMoves(chess, moves) {
+  const scored = moves.map(move => {
+    let score = 0;
+    const moveObj = chess.move(move);
+
+    // Captures are good to check first
+    if (moveObj.captured) {
+      score += 10 * PIECE_VALUES[moveObj.captured] - PIECE_VALUES[moveObj.piece];
+    }
+    // Promotions are very important
+    if (moveObj.promotion) {
+      score += PIECE_VALUES[moveObj.promotion];
+    }
+    // Checks are important
+    if (chess.isCheck()) {
+      score += 50;
+    }
+
+    chess.undo();
+    return { move, score };
+  });
+
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map(s => s.move);
+}
+
+// Get best move using minimax with alpha-beta pruning
+function getBestMove(chess, depth = 3) {
   const moves = chess.moves();
   if (moves.length === 0) return null;
 
+  // Order moves for better pruning
+  const orderedMoves = orderMoves(chess, moves);
+
   const isMaximizing = chess.turn() === 'w';
-  let bestMove = moves[0];
+  let bestMove = orderedMoves[0];
   let bestScore = isMaximizing ? -Infinity : Infinity;
 
-  for (const move of moves) {
+  for (const move of orderedMoves) {
     chess.move(move);
     const score = minimax(chess, depth - 1, -Infinity, Infinity, !isMaximizing);
     chess.undo();
@@ -155,9 +271,12 @@ function minimax(chess, depth, alpha, beta, isMaximizing) {
 
   const moves = chess.moves();
 
+  // Simple move ordering for better pruning
+  const orderedMoves = moves.length > 10 ? orderMoves(chess, moves) : moves;
+
   if (isMaximizing) {
     let maxScore = -Infinity;
-    for (const move of moves) {
+    for (const move of orderedMoves) {
       chess.move(move);
       const score = minimax(chess, depth - 1, alpha, beta, false);
       chess.undo();
@@ -168,7 +287,7 @@ function minimax(chess, depth, alpha, beta, isMaximizing) {
     return maxScore;
   } else {
     let minScore = Infinity;
-    for (const move of moves) {
+    for (const move of orderedMoves) {
       chess.move(move);
       const score = minimax(chess, depth - 1, alpha, beta, true);
       chess.undo();
@@ -243,7 +362,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           isError: true
         };
       }
-      const depth = Math.min(args.depth || 3, 4); // Limit depth for performance
+      // Use depth 3 for reasonable speed and quality
+      const depth = Math.min(args.depth || 3, 3);
       const bestMove = getBestMove(chess, depth);
       return {
         content: [{ type: 'text', text: bestMove || 'No moves available' }]
