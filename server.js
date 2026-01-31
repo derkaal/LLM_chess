@@ -132,49 +132,33 @@ Respond with ONLY the move in algebraic notation (e.g., "e4" or "Nf3" or "Bxc6")
 async function getMCPPlayerMove(chess, moveHistory, gameId) {
   const board = chess.ascii();
   const fen = chess.fen();
+  const chessLegalMoves = chess.moves();
 
   try {
-    // Get legal moves from chess.js (always available)
-    let legalMoves = chess.moves();
-    let engineMove = null;
-
     // Try to get engine recommendation from MCP if available
     if (mcpAvailable && mcpClient) {
       try {
-        // Get legal moves from MCP server
-        const legalMovesResult = await mcpClient.callTool({
-          name: 'get_legal_moves',
-          arguments: { game_id: gameId }
-        });
-
-        if (legalMovesResult.content && legalMovesResult.content[0]) {
-          const movesText = legalMovesResult.content[0].text;
-          const mcpMoves = movesText.split(',').map(m => m.trim()).filter(m => m);
-          if (mcpMoves.length > 0) {
-            legalMoves = mcpMoves;
-          }
-        }
-      } catch (e) {
-        console.log('Could not get legal moves from MCP:', e.message);
-      }
-
-      try {
-        // Get best move from engine
+        // Get best move from engine - use it directly if available
         const bestMoveResult = await mcpClient.callTool({
           name: 'get_best_move',
           arguments: { game_id: gameId, depth: 10 }
         });
 
         if (bestMoveResult.content && bestMoveResult.content[0]) {
-          engineMove = bestMoveResult.content[0].text.trim();
+          const engineMove = bestMoveResult.content[0].text.trim();
+          // Verify it's a legal move and use it directly
+          if (chessLegalMoves.includes(engineMove)) {
+            console.log(`MCP Player using engine move: ${engineMove}`);
+            return engineMove;
+          }
         }
       } catch (e) {
         console.log('Could not get best move from MCP:', e.message);
       }
     }
 
-    // Use LLM with validated legal moves context
-    const prompt = `You are playing chess as Black with assistance from a chess engine (MCP-enabled).
+    // Fallback: Use LLM with validated legal moves if MCP engine move not available
+    const prompt = `You are playing chess as Black. Choose the strongest move.
 
 Current board position:
 ${board}
@@ -183,13 +167,9 @@ FEN: ${fen}
 
 Move history: ${moveHistory.length > 0 ? moveHistory.join(', ') : 'Game just started'}
 
-VALIDATED Legal moves available: ${legalMoves.join(', ')}
-${engineMove ? `Chess engine recommends: ${engineMove}` : ''}
+Legal moves: ${chessLegalMoves.join(', ')}
 
-It is your turn (Black). You have access to validated legal moves.
-${engineMove ? `The engine's recommended move is: ${engineMove}. You MUST play this move.` : 'Choose the best move from the VALIDATED legal moves list above.'}
-
-Respond with ONLY the move in algebraic notation. No explanation.`;
+Choose the best move from the legal moves list. Respond with ONLY the move. No explanation.`;
 
     const response = await anthropic.messages.create({
       model: 'claude-sonnet-4-20250514',
@@ -201,22 +181,15 @@ Respond with ONLY the move in algebraic notation. No explanation.`;
     const moveMatch = moveText.match(/^([KQRBN]?[a-h]?[1-8]?x?[a-h][1-8](=[QRBN])?|O-O-O|O-O|0-0-0|0-0)[\+#]?/i);
     moveText = moveMatch ? moveMatch[0] : moveText.split(/\s/)[0];
 
-    // Validate the move using chess.js
-    const chessLegalMoves = chess.moves();
-
-    // If the LLM's move isn't valid, use the engine's move or first legal move
-    if (!chessLegalMoves.includes(moveText)) {
-      if (engineMove && chessLegalMoves.includes(engineMove)) {
-        return engineMove;
-      }
-      // Fallback to first legal move
-      return chessLegalMoves[0];
+    // Validate the move
+    if (chessLegalMoves.includes(moveText)) {
+      return moveText;
     }
 
-    return moveText;
+    // Fallback to first legal move
+    return chessLegalMoves[0];
   } catch (error) {
     console.error('MCP Player error:', error);
-    // Fallback to a legal move using chess.js
     return chess.moves()[0];
   }
 }
