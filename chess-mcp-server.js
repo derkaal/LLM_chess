@@ -1,5 +1,9 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import {
+  CallToolRequestSchema,
+  ListToolsRequestSchema
+} from '@modelcontextprotocol/sdk/types.js';
 import { Chess } from 'chess.js';
 
 // Store active games
@@ -14,8 +18,8 @@ const server = new Server({
   }
 });
 
-// Register tools
-server.setRequestHandler('tools/list', async () => {
+// Register tools list handler
+server.setRequestHandler(ListToolsRequestSchema, async () => {
   return {
     tools: [
       {
@@ -177,7 +181,7 @@ function minimax(chess, depth, alpha, beta, isMaximizing) {
 }
 
 // Handle tool calls
-server.setRequestHandler('tools/call', async (request) => {
+server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
   switch (name) {
